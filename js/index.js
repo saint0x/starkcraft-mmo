@@ -72,7 +72,7 @@ class Game {
     
     // Handle window resize
     window.addEventListener('resize', () => this.onWindowResize(), false);
-    
+
     // Start animation loop
     this.animate();
   }
@@ -291,27 +291,53 @@ class Game {
       0.1, 
       2000
     );
-    this.camera.position.set(0, 2, 5);
+    this.camera.position.set(0, 4, 8);
     this.camera.lookAt(0, 1, 0);
     
     // Setup orbit controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 1, 0);
+    
+    // Add custom property to track manual control
+    this.controls.isDragging = false;
+    
+    // Add event listeners for manual control detection
+    this.controls.addEventListener('start', () => {
+      this.controls.isDragging = true;
+    });
+    
+    this.controls.addEventListener('end', () => {
+      this.controls.isDragging = false;
+    });
+    
+    // Basic control settings
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.05;
-    this.controls.maxPolarAngle = Math.PI / 2; // Prevent camera from going below ground
-    this.controls.minDistance = 2; // Minimum zoom distance
-    this.controls.maxDistance = 10; // Maximum zoom distance
-    this.controls.rotateSpeed = 0.5; // Adjust rotation speed
-    this.controls.zoomSpeed = 1.0; // Adjust zoom speed
-    this.controls.panSpeed = 1.0; // Adjust pan speed
-    this.controls.enabled = true; // Ensure controls are enabled
-    this.controls.enableZoom = true; // Enable zoom
-    this.controls.enableRotate = true; // Enable rotation
-    this.controls.enablePan = true; // Enable panning
+    this.controls.dampingFactor = 0.1;
+    this.controls.screenSpacePanning = false;
+    
+    // Distance limits
+    this.controls.minDistance = 2;
+    this.controls.maxDistance = 20;
+    
+    // Rotation limits
+    this.controls.maxPolarAngle = Math.PI / 2;
+    this.controls.minPolarAngle = 0;
+    
+    // Speed settings
+    this.controls.rotateSpeed = 1.0;
+    this.controls.zoomSpeed = 1.0;
+    this.controls.panSpeed = 1.0;
+    
+    // Enable all controls
+    this.controls.enabled = true;
+    this.controls.enableZoom = true;
+    this.controls.enableRotate = true;
+    this.controls.enablePan = true;
+    
+    // Set initial target
+    this.controls.target.set(0, 1, 0);
     this.controls.update();
   }
-
+  
   animate() {
     requestAnimationFrame(() => this.animate());
     
@@ -321,19 +347,25 @@ class Game {
     if (this.characterController) {
       this.characterController.update(deltaTime, this.camera);
       
-      // Update camera target to follow character
+      // Get character position
       const characterPosition = this.characterController.character.position;
-      this.controls.target.set(
-        characterPosition.x,
-        characterPosition.y + 1, // Offset to look at character's upper body
-        characterPosition.z
-      );
+      
+      // Only update the target if we're not actively controlling the camera
+      if (!this.controls.isDragging) {
+        // Smoothly move the target to follow the character
+        const targetPosition = new THREE.Vector3(
+          characterPosition.x,
+          characterPosition.y + 1,
+          characterPosition.z
+        );
+        
+        // Lerp the target position for smooth following
+        this.controls.target.lerp(targetPosition, 0.05);
+      }
     }
     
-    // Always update controls in animation loop
-    if (this.controls) {
-      this.controls.update();
-    }
+    // Update controls every frame for smooth damping
+    this.controls.update();
     
     // Render scene
     this.renderer.render(this.scene, this.camera);

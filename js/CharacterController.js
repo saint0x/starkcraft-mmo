@@ -55,7 +55,7 @@ export class CharacterController {
   
   setupCharacter() {
     // Scale and position character appropriately
-    this.character.scale.set(1, 1, 1);
+    this.character.scale.set(4, 4, 4);
     this.character.position.set(0, 0, 0);
     
     // Log the character hierarchy to debug bone structure
@@ -101,8 +101,8 @@ export class CharacterController {
   }
   
   attachWeapon() {
-    // Scale and adjust weapon
-    this.weapon.scale.set(0.01, 0.01, 0.01);
+    // Scale and adjust weapon - maintain original proportion (0.01) with 4x larger character
+    this.weapon.scale.set(0.01, 0.01, 0.01); // Keep original scale since weapon should stay same size relative to character
     this.weapon.rotateY(Math.PI / 2);
     
     // Find hand bone to attach the weapon
@@ -161,15 +161,15 @@ export class CharacterController {
       loader.load(fullPath, (animFBX) => {
         if (animFBX.animations && animFBX.animations.length > 0) {
           const action = this.mixer.clipAction(animFBX.animations[0]);
-          this.animations.set(name, action);
+            this.animations.set(name, action);
           console.log(`Loaded animation: ${name}`);
-          
+            
           // Play idle animation when it's loaded
-          if (name === 'idle') {
-            action.play();
-            this.currentAnimation = 'idle';
+            if (name === 'idle') {
+              action.play();
+              this.currentAnimation = 'idle';
+            }
           }
-        }
       });
     });
   }
@@ -274,7 +274,7 @@ export class CharacterController {
   update(deltaTime, camera) {
     // Update animation mixer
     if (this.mixer) {
-      this.mixer.update(deltaTime);
+    this.mixer.update(deltaTime);
     }
 
     // Reset movement direction
