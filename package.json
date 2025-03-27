@@ -1,0 +1,29 @@
+{
+  "name": "wow-test",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "http-server . -p 3000 -c-1",
+    "build": "tsc"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "http-server": "^14.1.1",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/three": "^0.174.0",
+    "cannon-es": "^0.20.0",
+    "three": "^0.174.0"
+  },
+  "version": "1.0.0",
+  "description": "To install dependencies:",
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
