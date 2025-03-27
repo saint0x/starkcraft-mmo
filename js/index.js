@@ -40,17 +40,7 @@ class Game {
     // Initialize Three.js
     this.scene = new THREE.Scene();
     
-    // Setup camera
-    this.camera = new THREE.PerspectiveCamera(
-      75, 
-      window.innerWidth / window.innerHeight, 
-      0.1, 
-      2000
-    );
-    this.camera.position.set(0, 2, 5);
-    this.camera.lookAt(0, 1, 0);
-    
-    // Setup renderer
+    // Setup renderer first
     this.renderer = new THREE.WebGLRenderer({ 
       antialias: true,
       powerPreference: "high-performance"
@@ -66,17 +56,12 @@ class Game {
     
     document.body.appendChild(this.renderer.domElement);
     
+    // Now setup camera and controls after renderer is created
+    this.setupCamera();
+    
     // Setup lighting and ground
     this.setupLighting();
     this.setupGround();
-    
-    // Setup controls
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 1, 0);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.05;
-    this.controls.maxPolarAngle = Math.PI / 2;
-    this.controls.update();
     
     // Initialize clock for animation
     this.clock = new THREE.Clock();
@@ -286,23 +271,69 @@ class Game {
   }
   
   onWindowResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    if (this.camera) {
+      this.camera.aspect = window.innerWidth / window.innerHeight;
+      this.camera.updateProjectionMatrix();
+    }
+    if (this.renderer) {
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    if (this.controls) {
+      this.controls.update();
+    }
   }
   
+  setupCamera() {
+    // Setup camera
+    this.camera = new THREE.PerspectiveCamera(
+      75, 
+      window.innerWidth / window.innerHeight, 
+      0.1, 
+      2000
+    );
+    this.camera.position.set(0, 2, 5);
+    this.camera.lookAt(0, 1, 0);
+    
+    // Setup orbit controls
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.target.set(0, 1, 0);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.05;
+    this.controls.maxPolarAngle = Math.PI / 2; // Prevent camera from going below ground
+    this.controls.minDistance = 2; // Minimum zoom distance
+    this.controls.maxDistance = 10; // Maximum zoom distance
+    this.controls.rotateSpeed = 0.5; // Adjust rotation speed
+    this.controls.zoomSpeed = 1.0; // Adjust zoom speed
+    this.controls.panSpeed = 1.0; // Adjust pan speed
+    this.controls.enabled = true; // Ensure controls are enabled
+    this.controls.enableZoom = true; // Enable zoom
+    this.controls.enableRotate = true; // Enable rotation
+    this.controls.enablePan = true; // Enable panning
+    this.controls.update();
+  }
+
   animate() {
     requestAnimationFrame(() => this.animate());
     
     const deltaTime = this.clock.getDelta();
     
-    // Update character controller
+    // Update character controller if it exists
     if (this.characterController) {
       this.characterController.update(deltaTime, this.camera);
+      
+      // Update camera target to follow character
+      const characterPosition = this.characterController.character.position;
+      this.controls.target.set(
+        characterPosition.x,
+        characterPosition.y + 1, // Offset to look at character's upper body
+        characterPosition.z
+      );
     }
     
-    // Update controls
-    this.controls.update();
+    // Always update controls in animation loop
+    if (this.controls) {
+      this.controls.update();
+    }
     
     // Render scene
     this.renderer.render(this.scene, this.camera);
