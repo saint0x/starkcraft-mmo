@@ -1,4 +1,6 @@
-class CharacterController {
+import * as THREE from 'three';
+
+export class CharacterController {
   constructor(
     characterFBX,
     weaponFBX,
@@ -16,23 +18,29 @@ class CharacterController {
     this.animations = new Map();
     this.currentAnimation = 'idle';
     this.scene = scene;
-    this.physicsWorld = world;
-    this.physicsBody = null;
     
     // Animation clip names and their file paths
     this.animationPaths = {
-      'idle': 'sword-and-shield-idle.fbx',
-      'walk': 'sword-and-shield-walk.fbx',
-      'run': 'sword-and-shield-run.fbx',
-      'attack': 'sword-and-shield-slash.fbx',
-      'block': 'sword-and-shield-block.fbx',
-      'death': 'sword-and-shield-death.fbx'
+      'idle': 'idle.fbx',
+      'walk': 'walk.fbx',
+      'run': 'run.fbx',
+      'attack': 'attack.fbx',
+      'block': 'block.fbx',
+      'death': 'death.fbx'
     };
     
+    // Movement properties
+    this.moveSpeed = 5;
+    this.rotationSpeed = 5;
+    this.velocity = new THREE.Vector3();
+    this.direction = new THREE.Vector3();
+    this.moveDirection = new THREE.Vector3();
+    this.isGrounded = true;
+    
     // Character properties
-    this.speed = 5;
-    this.jumpForce = 10;
     this.health = 100;
+    
+    console.log('Setting up character with FBX:', characterFBX);
     
     // Setup character
     this.setupCharacter();
@@ -41,17 +49,23 @@ class CharacterController {
     this.mixer = new THREE.AnimationMixer(this.character);
     this.loadAnimations(animationsPath, loader);
     
-    // Setup physics
-    this.physicsBody = this.setupPhysics();
-    
     // Setup keyboard controls
     this.setupControls();
   }
   
   setupCharacter() {
     // Scale and position character appropriately
-    this.character.scale.set(0.05, 0.05, 0.05);
+    this.character.scale.set(1, 1, 1);
     this.character.position.set(0, 0, 0);
+    
+    // Log the character hierarchy to debug bone structure
+    console.log('Character hierarchy:');
+    this.character.traverse((child) => {
+      console.log(child.name, child.type);
+      if (child.isBone) {
+        console.log('Found bone:', child.name);
+      }
+    });
     
     // Ensure character casts and receives shadows
     this.character.traverse((child) => {
@@ -61,7 +75,6 @@ class CharacterController {
         
         // Enhance materials for better rendering
         if (child.material) {
-          // Convert to array if it's a single material
           const materials = Array.isArray(child.material) 
             ? child.material 
             : [child.material];
@@ -79,14 +92,17 @@ class CharacterController {
     
     // Add character to scene
     this.scene.add(this.character);
+    console.log('Character added to scene with scale:', this.character.scale.x);
     
-    // Attach weapon to character's hand
-    this.attachWeapon();
+    // Only attach weapon if it exists
+    if (this.weapon) {
+      this.attachWeapon();
+    }
   }
   
   attachWeapon() {
     // Scale and adjust weapon
-    this.weapon.scale.set(0.07, 0.07, 0.07);
+    this.weapon.scale.set(0.01, 0.01, 0.01);
     this.weapon.rotateY(Math.PI / 2);
     
     // Find hand bone to attach the weapon
@@ -135,109 +151,56 @@ class CharacterController {
   }
   
   loadAnimations(animationsPath, loader) {
-    // Create a queue to load all animations
-    const animationPromises = [];
+    console.log('Loading animations from files...');
     
-    // Load each animation
-    for (const [name, file] of Object.entries(this.animationPaths)) {
-      const promise = new Promise((resolve) => {
-        loader.load(`${animationsPath}${file}`, (animFBX) => {
-          // Get animation from the loaded FBX
-          const animation = animFBX.animations[0];
-          if (animation) {
-            // Create an animation action and add to our map
-            const action = this.mixer.clipAction(animation);
-            this.animations.set(name, action);
-            
-            // If this is the idle animation, play it immediately
-            if (name === 'idle') {
-              action.play();
-              this.currentAnimation = 'idle';
-            }
-          }
-          resolve();
-        });
-      });
+    // Load all animations from files
+    Object.entries(this.animationPaths).forEach(([name, file]) => {
+      const fullPath = `${animationsPath}${file}`;
+      console.log(`Loading animation from: ${fullPath}`);
       
-      animationPromises.push(promise);
-    }
-    
-    // When all animations are loaded
-    Promise.all(animationPromises).then(() => {
-      console.log('All animations loaded successfully');
+      loader.load(fullPath, (animFBX) => {
+        if (animFBX.animations && animFBX.animations.length > 0) {
+          const action = this.mixer.clipAction(animFBX.animations[0]);
+          this.animations.set(name, action);
+          console.log(`Loaded animation: ${name}`);
+          
+          // Play idle animation when it's loaded
+          if (name === 'idle') {
+            action.play();
+            this.currentAnimation = 'idle';
+          }
+        }
+      });
     });
-  }
-  
-  setupPhysics() {
-    // Create a capsule shape for character collision
-    const radius = 1;
-    const height = 4;
-    const capsuleShape = new CANNON.Cylinder(
-      radius, 
-      radius, 
-      height, 
-      8
-    );
-    
-    // Create the physics body
-    const body = new CANNON.Body({
-      mass: 80, // kg
-      position: new CANNON.Vec3(0, height / 2, 0),
-      shape: capsuleShape,
-      fixedRotation: true, // Prevent character from tipping over
-      linearDamping: 0.9
-    });
-    
-    // Add physics body to world
-    this.physicsWorld.addBody(body);
-    
-    return body;
   }
   
   setupControls() {
     // Track key states
-    const keys = {
+    this.keys = {
       'w': false,
-      'a': false,
       's': false,
+      'a': false,
       'd': false,
-      ' ': false, // Space for jump
-      'shift': false, // Shift for running
-      'e': false // E for attack
+      'shift': false
     };
     
-    // Key down event
-    window.addEventListener('keydown', (event) => {
-      if (keys.hasOwnProperty(event.key.toLowerCase())) {
-        keys[event.key.toLowerCase()] = true;
-      }
-      
-      if (event.key === 'Shift') {
-        keys['shift'] = true;
+    // Add event listeners
+    document.addEventListener('keydown', (e) => {
+      if (this.keys.hasOwnProperty(e.key.toLowerCase())) {
+        this.keys[e.key.toLowerCase()] = true;
       }
     });
     
-    // Key up event
-    window.addEventListener('keyup', (event) => {
-      if (keys.hasOwnProperty(event.key.toLowerCase())) {
-        keys[event.key.toLowerCase()] = false;
-      }
-      
-      if (event.key === 'Shift') {
-        keys['shift'] = false;
-      }
-      
-      // Attack on key press (not held)
-      if (event.key.toLowerCase() === 'e') {
-        this.playAnimation('attack', true);
+    document.addEventListener('keyup', (e) => {
+      if (this.keys.hasOwnProperty(e.key.toLowerCase())) {
+        this.keys[e.key.toLowerCase()] = false;
       }
     });
-    
-    // Store keys for use in update
-    this.keys = keys;
   }
   
   playAnimation(name, isAction = false) {
+    console.log('Playing animation:', name, 'Current animations:', Array.from(this.animations.keys()));
+    
     // Don't interrupt actions in progress
     if (isAction) {
       if (this.currentAnimation === 'attack' || 
@@ -297,6 +260,8 @@ class CharacterController {
           currentAction.fadeOut(0.2);
           action.reset().fadeIn(0.2).play();
           this.currentAnimation = name;
+        } else {
+          console.warn(`Could not find animation: ${name}`);
         }
       }
     }
@@ -306,68 +271,72 @@ class CharacterController {
     return this.keys.w || this.keys.a || this.keys.s || this.keys.d;
   }
   
-  update(deltaTime) {
+  update(deltaTime, camera) {
     // Update animation mixer
-    this.mixer.update(deltaTime);
-    
-    // Get key states
-    const keys = this.keys;
-    
-    // Handle movement
-    const moveSpeed = keys.shift ? this.speed * 2 : this.speed;
-    const moveVector = new CANNON.Vec3(0, 0, 0);
-    
-    if (keys.w) moveVector.z = -moveSpeed;
-    if (keys.s) moveVector.z = moveSpeed;
-    if (keys.a) moveVector.x = -moveSpeed;
-    if (keys.d) moveVector.x = moveSpeed;
-    
-    // Update animation based on movement
-    if (this.isMoving()) {
-      if (keys.shift) {
-        this.playAnimation('run');
-      } else {
-        this.playAnimation('walk');
-      }
-    } else if (this.currentAnimation !== 'attack' && 
-               this.currentAnimation !== 'block' && 
-               this.currentAnimation !== 'death') {
+    if (this.mixer) {
+      this.mixer.update(deltaTime);
+    }
+
+    // Reset movement direction
+    this.moveDirection.set(0, 0, 0);
+    let isMoving = false;
+    let isRunning = this.keys['shift'];
+
+    // Calculate movement based on camera direction
+    const cameraDirection = new THREE.Vector3();
+    camera.getWorldDirection(cameraDirection);
+    cameraDirection.y = 0;
+    cameraDirection.normalize();
+
+    const cameraRight = new THREE.Vector3();
+    cameraRight.crossVectors(camera.up, cameraDirection).normalize();
+
+    // Forward/backward movement
+    if (this.keys['w']) {
+      this.moveDirection.add(cameraDirection);
+      isMoving = true;
+    } else if (this.keys['s']) {
+      this.moveDirection.sub(cameraDirection);
+      isMoving = true;
+    }
+
+    // Left/right movement
+    if (this.keys['a']) {
+      this.moveDirection.sub(cameraRight);
+      isMoving = true;
+    } else if (this.keys['d']) {
+      this.moveDirection.add(cameraRight);
+      isMoving = true;
+    }
+
+    // Normalize movement direction and apply speed
+    if (isMoving) {
+      this.moveDirection.normalize();
+      const speed = isRunning ? this.moveSpeed * 2 : this.moveSpeed;
+      this.moveDirection.multiplyScalar(speed * deltaTime);
+
+      // Update character position
+      this.character.position.add(this.moveDirection);
+
+      // Update character rotation to face movement direction
+      const targetRotation = Math.atan2(this.moveDirection.x, this.moveDirection.z);
+      const currentRotation = this.character.rotation.y;
+      const rotationDiff = targetRotation - currentRotation;
+      
+      // Normalize rotation difference to [-PI, PI]
+      const normalizedDiff = ((rotationDiff + Math.PI) % (Math.PI * 2)) - Math.PI;
+      
+      // Smoothly rotate character
+      this.character.rotation.y += normalizedDiff * this.rotationSpeed * deltaTime;
+
+      // Play appropriate animation
+      this.playAnimation(isRunning ? 'run' : 'walk');
+    } else {
+      // Play idle animation when not moving
       this.playAnimation('idle');
     }
-    
-    // Apply movement to physics body
-    if (moveVector.x !== 0 || moveVector.z !== 0) {
-      // Normalize vector for consistent movement speed in all directions
-      if (moveVector.length() > 0) {
-        moveVector.normalize();
-        moveVector.scale(moveSpeed, moveVector);
-      }
-      
-      this.physicsBody.velocity.x = moveVector.x;
-      this.physicsBody.velocity.z = moveVector.z;
-      
-      // Rotate character to face movement direction
-      if (moveVector.x !== 0 || moveVector.z !== 0) {
-        const angle = Math.atan2(moveVector.x, moveVector.z);
-        this.character.rotation.y = angle;
-      }
-    } else {
-      // Apply damping to stop movement
-      this.physicsBody.velocity.x *= 0.9;
-      this.physicsBody.velocity.z *= 0.9;
-    }
-    
-    // Handle jumping
-    if (keys[' '] && Math.abs(this.physicsBody.velocity.y) < 0.1) {
-      this.physicsBody.velocity.y = this.jumpForce;
-    }
-    
-    // Update character position from physics
-    this.character.position.x = this.physicsBody.position.x;
-    this.character.position.y = this.physicsBody.position.y - 2; // Offset to place feet on ground
-    this.character.position.z = this.physicsBody.position.z;
-  }
-}
 
-// Make CharacterController globally available
-window.CharacterController = CharacterController; 
+    // Keep character grounded
+    this.character.position.y = 0;
+  }
+} 

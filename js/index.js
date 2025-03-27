@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import * as CANNON from 'cannon-es';
+import { CharacterController } from './CharacterController.js';
 
 // Debug logging utility
 const DEBUG = {
@@ -18,6 +19,24 @@ class Game {
   constructor() {
     DEBUG.log('Game', 'constructor', 'Initializing game...');
     
+    // Create loading screen
+    this.loadingScreen = document.createElement('div');
+    this.loadingScreen.id = 'loadingScreen'; // Add ID for easier removal
+    this.loadingScreen.style.position = 'fixed';
+    this.loadingScreen.style.top = '0';
+    this.loadingScreen.style.left = '0';
+    this.loadingScreen.style.width = '100%';
+    this.loadingScreen.style.height = '100%';
+    this.loadingScreen.style.background = 'rgba(0,0,0,0.8)';
+    this.loadingScreen.style.color = 'white';
+    this.loadingScreen.style.display = 'flex';
+    this.loadingScreen.style.justifyContent = 'center';
+    this.loadingScreen.style.alignItems = 'center';
+    this.loadingScreen.style.fontSize = '24px';
+    this.loadingScreen.style.zIndex = '1000';
+    this.loadingScreen.textContent = 'Loading...';
+    document.body.appendChild(this.loadingScreen);
+    
     // Initialize Three.js
     this.scene = new THREE.Scene();
     
@@ -28,10 +47,10 @@ class Game {
       0.1, 
       2000
     );
-    this.camera.position.set(0, 2, 5); // Move camera back and up
+    this.camera.position.set(0, 2, 5);
     this.camera.lookAt(0, 1, 0);
     
-    // Setup renderer with advanced features
+    // Setup renderer
     this.renderer = new THREE.WebGLRenderer({ 
       antialias: true,
       powerPreference: "high-performance"
@@ -43,105 +62,66 @@ class Game {
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
-    this.renderer.setClearColor(0x87CEEB); // Sky blue background
+    this.renderer.setClearColor(0x87CEEB);
     
     document.body.appendChild(this.renderer.domElement);
     
-    // Setup professional lighting
+    // Setup lighting and ground
     this.setupLighting();
-    
-    // Setup ground
     this.setupGround();
     
     // Setup controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 1, 0); // Look at character's center
+    this.controls.target.set(0, 1, 0);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
     this.controls.maxPolarAngle = Math.PI / 2;
     this.controls.update();
     
-    // Setup physics
-    this.world = new CANNON.World({
-      gravity: new CANNON.Vec3(0, -9.82, 0)
-    });
+    // Initialize clock for animation
+    this.clock = new THREE.Clock();
     
-    // Add ground physics
-    const groundShape = new CANNON.Plane();
-    const groundBody = new CANNON.Body({
-      mass: 0,
-      shape: groundShape
-    });
-    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // Rotate to match visual ground
-    this.world.addBody(groundBody);
-    
-    // Character physics setup
-    this.characterBody = null;
-    
-    // Animation system
-    this.mixer = null;
-    this.animations = {};
-    this.currentAnimation = 'idle';
-    this.currentAction = null;
-    
-    // Movement state
-    this.movement = {
-      forward: false,
-      backward: false,
-      left: false,
-      right: false,
-      running: false
-    };
-    
-    // Create loading screen
-    this.loadingScreen = document.getElementById('loading');
-    
-    // Setup loading manager
+    // Setup loading manager and start loading assets
     this.setupLoadingManager();
-    
-    // Start loading assets
     this.loadAssets();
-    
-    // Start animation loop
-    this.animate();
     
     // Handle window resize
     window.addEventListener('resize', () => this.onWindowResize(), false);
-
-    // Setup controls
-    this.setupControls();
+    
+    // Start animation loop
+    this.animate();
   }
   
   setupLoadingManager() {
     DEBUG.log('Game', 'setupLoadingManager', 'Setting up loading manager');
     
-    // Create loading manager
     this.loadingManager = new THREE.LoadingManager();
     
     this.loadingManager.onLoad = () => {
       DEBUG.log('Game', 'onLoad', 'All assets loaded');
-      if (this.loadingScreen) {
-        this.loadingScreen.style.display = 'none';
-      }
+      this.removeLoadingScreen();
     };
     
     this.loadingManager.onProgress = (url, loaded, total) => {
-      DEBUG.log('Game', 'onProgress', {
-        url,
-        loaded,
-        total,
-        percentage: Math.round(loaded / total * 100)
-      });
+      const percentage = Math.round(loaded / total * 100);
       if (this.loadingScreen) {
-        this.loadingScreen.textContent = `Loading: ${Math.round(loaded / total * 100)}%`;
+        this.loadingScreen.textContent = `${percentage}%`;
       }
     };
     
     this.loadingManager.onError = (url) => {
-      DEBUG.log('Game', 'onError', {
-        url,
-        error: 'Failed to load resource'
-      });
+      DEBUG.log('Game', 'onError', `Failed to load: ${url}`);
+      if (this.loadingScreen) {
+        this.loadingScreen.textContent = 'Error loading assets';
+        const retryButton = document.createElement('button');
+        retryButton.textContent = 'Retry';
+        retryButton.style.marginLeft = '10px';
+        retryButton.onclick = () => {
+          this.loadAssets();
+          retryButton.remove();
+        };
+        this.loadingScreen.appendChild(retryButton);
+      }
     };
   }
   
@@ -187,358 +167,122 @@ class Game {
   }
   
   setupGround() {
-    // Create ground plane
-    const groundGeometry = new THREE.PlaneGeometry(20, 20);
+    // Create a large ground plane
+    const groundGeometry = new THREE.PlaneGeometry(1000, 1000, 100, 100);
     const groundMaterial = new THREE.MeshStandardMaterial({ 
       color: 0x3a8c3a,
       roughness: 0.8,
-      metalness: 0.2
+      metalness: 0.2,
+      side: THREE.DoubleSide
     });
+    
+    // Add some vertex displacement for terrain variation
+    const vertices = groundGeometry.attributes.position.array;
+    for (let i = 0; i < vertices.length; i += 3) {
+      if (i !== 1) { // Don't modify Y of center vertices
+        vertices[i + 1] = Math.random() * 0.3; // Subtle height variation
+      }
+    }
+    groundGeometry.computeVertexNormals();
+    
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
     ground.receiveShadow = true;
+    
+    // Add grid helper for visual reference
+    const gridHelper = new THREE.GridHelper(1000, 100, 0x000000, 0x000000);
+    gridHelper.position.y = 0.01; // Slightly above ground to prevent z-fighting
+    gridHelper.material.opacity = 0.2;
+    gridHelper.material.transparent = true;
+    
     this.scene.add(ground);
+    this.scene.add(gridHelper);
   }
   
   loadAssets() {
-    DEBUG.log('Game', 'loadAssets', 'Starting asset loading...');
+    DEBUG.log('Game', 'loadAssets', 'Loading game assets...');
+    
+    // Create FBX loader
     const loader = new FBXLoader(this.loadingManager);
     
-    // Define asset paths with correct structure
-    const paths = {
-      character: '/fox-character-copy/animations/sword-and-shield-pack/isfoxbool.fbx',
-      animations: {
-        base: '/fox-character-copy/animations/sword-and-shield-pack'
-      },
-      weapons: '/fox-character-copy/weapons/Double_Sword_1.fbx'
-    };
+    // Load character model with relative path - using isfoxbool.fbx which has correct rigging
+    const characterPath = './fox-character-copy/animations/sword-and-shield-pack/isfoxbool.fbx';
+    const weaponPath = './fox-character-copy/weapons/Double_Sword_1.fbx';
     
-    DEBUG.log('Game', 'paths', paths);
+    DEBUG.log('Game', 'loadAssets', `Loading character from: ${characterPath}`);
     
-    // Add debug sphere first to ensure it's visible
-    const debugSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.1, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    );
-    this.scene.add(debugSphere);
-
-    // Add axes helper
-    const axes = new THREE.AxesHelper(5);
-    this.scene.add(axes);
-    
-    const gridHelper = new THREE.GridHelper(10, 10);
-    this.scene.add(gridHelper);
-    
-    // Load character model with enhanced error handling
-    console.log('Attempting to load character from:', paths.character);
-    
-    try {
-      loader.load(
-        paths.character,
-        (fbx) => {
-          console.log('Character loaded successfully:', fbx);
-          DEBUG.log('Game', 'character-loaded', {
-            success: true,
-            modelName: fbx.name,
-            geometryCount: fbx.children.length
-          });
-          
-          // Setup character
-          this.character = fbx;
-          this.character.scale.setScalar(0.01);
-          this.character.position.set(0, 0, 0);
-          
-          // Rotate to face camera
-          this.character.rotation.y = Math.PI;
-          
-          // Enhanced debug logging
-          console.log('==== Character Full Structure ====');
-          let hasSkeleton = false;
-          let hasSkinnedMesh = false;
-          
-          this.character.traverse(child => {
-            console.log('Object:', {
-              name: child.name,
-              type: child.type,
-              uuid: child.uuid,
-              isBone: child.isBone,
-              isMesh: child.isMesh,
-              isSkinnedMesh: child.isSkinnedMesh,
-              parent: child.parent ? child.parent.name : 'none',
-              geometry: child.geometry ? {
-                type: child.geometry.type,
-                vertexCount: child.geometry.attributes?.position?.count,
-                hasSkinning: child.geometry.attributes?.skinIndex !== undefined,
-                hasSkinWeights: child.geometry.attributes?.skinWeight !== undefined
-              } : null,
-              material: child.material ? {
-                type: child.material.type,
-                skinning: child.material.skinning
-              } : null
-            });
-            
-            if (child.isBone) hasSkeleton = true;
-            if (child.isSkinnedMesh) hasSkinnedMesh = true;
-          });
-          
-          console.log('Character Summary:', {
-            hasSkeleton,
-            hasSkinnedMesh,
-            totalObjects: this.character.children.length
-          });
-          console.log('=======================');
-
-          // Make character visible with proper materials
-          this.character.traverse(child => {
-            if (child.isMesh) {
-              // Keep original materials but ensure skinning works
-              if (!child.material.skinning) {
-                const originalMaterial = child.material;
-                child.material = new THREE.MeshStandardMaterial({
-                  map: originalMaterial.map,
-                  normalMap: originalMaterial.normalMap,
-                  roughnessMap: originalMaterial.roughnessMap,
-                  metalnessMap: originalMaterial.metalnessMap,
-                  skinning: true
-                });
-              }
-              
-              // Enable shadows
-              child.castShadow = true;
-              child.receiveShadow = true;
-              
-              // Force mesh to be visible
-              child.visible = true;
-              child.frustumCulled = false;
-              
-              // Log mesh info
-              console.log('Mesh details:', {
-                name: child.name,
-                materialType: child.material.type,
-                hasTexture: !!child.material.map,
-                hasNormalMap: !!child.material.normalMap
-              });
-            }
-          });
-
-          // Add character to scene BEFORE adding helpers
-          this.scene.add(this.character);
-
-          // Setup character physics
-          this.setupCharacterPhysics();
-
-          // Add bounding box helper
-          const bbox = new THREE.BoxHelper(this.character, 0xff0000);
-          this.scene.add(bbox);
-
-          // Add skeleton helper if there are bones
-          const bones = [];
-          this.character.traverse(object => {
-            if (object.isBone) bones.push(object);
-          });
-          if (bones.length > 0) {
-            const skeletonHelper = new THREE.SkeletonHelper(this.character);
-            skeletonHelper.material.linewidth = 3; // Make bones more visible
-            this.scene.add(skeletonHelper);
-          }
-
-          // Update character transform
-          this.character.scale.setScalar(1.0); // Much larger scale (20x previous size)
-          this.character.position.set(0, 0, 0);
-          this.character.rotation.y = Math.PI;
-          this.character.updateMatrixWorld(true); // Force update transforms
-
-          // Move debug sphere to feet level for reference
-          debugSphere.position.set(0, 0, 0);
-
-          // Log scene hierarchy
-          DEBUG.log('Game', 'scene-hierarchy', {
-            sceneChildren: this.scene.children.length,
-            characterInScene: this.scene.children.includes(this.character),
-            characterChildren: this.character.children.length,
-            characterPosition: this.character.position.toArray(),
-            characterScale: this.character.scale.toArray(),
-            characterRotation: this.character.rotation.toArray()
-          });
-
-          // Log camera setup
-          DEBUG.log('Game', 'camera-setup', {
-            position: this.camera.position.toArray(),
-            rotation: this.camera.rotation.toArray(),
-            fov: this.camera.fov,
-            aspect: this.camera.aspect,
-            near: this.camera.near,
-            far: this.camera.far
-          });
-
-          // Log renderer setup
-          DEBUG.log('Game', 'renderer-setup', {
-            size: {
-              width: this.renderer.domElement.width,
-              height: this.renderer.domElement.height
-            },
-            pixelRatio: this.renderer.getPixelRatio(),
-            shadowsEnabled: this.renderer.shadowMap.enabled,
-            shadowType: this.renderer.shadowMap.type,
-            outputEncoding: this.renderer.outputEncoding,
-            toneMapping: this.renderer.toneMapping
-          });
-
-          // Setup animation mixer
-          this.mixer = new THREE.AnimationMixer(this.character);
-          
-          // Load weapon and animations
-          this.loadWeapon(loader, paths.weapons);
-          this.loadAnimations(loader, paths.animations.base);
-          
-          // Add keyboard controls for animations
-          document.addEventListener('keydown', (event) => {
-            switch(event.key) {
-              case ' ':  // Space for attack
-                if (this.animations.attack) {
-                  this.animations.attack.reset().play();
-                }
-                break;
-              case 'w':  // W for walk
-                if (this.animations.walk) {
-                  this.animations.walk.reset().play().setLoop(THREE.LoopRepeat);
-                }
-                break;
-              case 'r':  // R for run
-                if (this.animations.run) {
-                  this.animations.run.reset().play().setLoop(THREE.LoopRepeat);
-                }
-                break;
-              case 's':  // S for slash
-                if (this.animations.slash) {
-                  this.animations.slash.reset().play();
-                }
-                break;
-              case 'i':  // I for idle
-                if (this.animations.idle) {
-                  this.animations.idle.reset().play().setLoop(THREE.LoopRepeat);
-                }
-                break;
-            }
-          });
-        },
-        (progress) => {
-          DEBUG.log('Game', 'character-progress', {
-            loaded: progress.loaded,
-            total: progress.total,
-            percentage: (progress.loaded / progress.total * 100).toFixed(2)
-          });
-        },
-        (error) => {
-          DEBUG.log('Game', 'character-error', {
-            error: error.message || error,
-            type: error.type,
-            stack: error.stack
-          });
-        }
-      );
-    } catch (error) {
-      console.error('Error loading character:', error);
-    }
-  }
-  
-  loadWeapon(loader, weaponPath) {
-    DEBUG.log('Game', 'loadWeapon', { weaponPath });
-    
-    loader.load(
-      weaponPath,
-      (weapon) => {
-        DEBUG.log('Game', 'weapon-loaded', {
-          success: true,
-          name: weapon.name
-        });
-        this.weapon = weapon;
-        weapon.scale.setScalar(0.01);
-        
-        // Enhance weapon materials
-        weapon.traverse(child => {
-          if (child.isMesh) {
-            child.castShadow = true;
-            child.material.roughness = 0.4;
-            child.material.metalness = 0.8;
-          }
-        });
-        
-        // Attach weapon to character's hand if character is loaded
-        if (this.character) {
-          const handBone = this.character.getObjectByName('mixamorigRightHand');
-          if (handBone) {
-            handBone.add(weapon);
-            weapon.position.set(0, 0, 0);
-            weapon.rotation.set(0, 0, 0);
-          }
-        }
-      },
-      (progress) => {
-        DEBUG.log('Game', 'weapon-progress', {
-          loaded: progress.loaded,
-          total: progress.total,
-          percentage: (progress.loaded / progress.total * 100).toFixed(2)
-        });
-      },
-      (error) => {
-        DEBUG.log('Game', 'weapon-error', {
-          error: error.message || error,
-          type: error.type,
-          stack: error.stack
-        });
-      }
-    );
-  }
-  
-  loadAnimations(loader, animationsPath) {
-    DEBUG.log('Game', 'loadAnimations', { basePath: animationsPath });
-    
-    const animations = [
-      { name: 'idle', file: '/idle.fbx' },
-      { name: 'walk', file: '/walk.fbx' },
-      { name: 'run', file: '/run.fbx' },
-      { name: 'attack', file: '/attack.fbx' },
-      { name: 'slash', file: '/slash.fbx' }
-    ];
-
-    // Create bone map for retargeting
-    const boneMap = {};
-    if (this.character) {
-      console.log('Creating bone map for retargeting...');
-      this.character.traverse(child => {
-        if (child.isBone) {
-          console.log('Found bone:', child.name);
-          boneMap[child.name] = child.name;
-          const cleanName = child.name.toLowerCase().replace(/^(mixamorig)?/, '');
-          boneMap[`mixamorig${cleanName}`] = child.name;
-        }
-      });
-    }
-    
-    // Load all animations
-    animations.forEach(animation => {
-      const fullPath = animationsPath + animation.file;
+    loader.load(characterPath, (characterFBX) => {
+      DEBUG.log('Game', 'loadAssets', 'Character FBX loaded successfully:', characterFBX);
       
-      loader.load(
-        fullPath,
-        (animationFbx) => {
-          if (animationFbx.animations.length > 0) {
-            const clip = animationFbx.animations[0];
-            
-            // Store the animation clip directly
-            this.animations[animation.name] = clip;
-            
-            // Play idle animation by default
-            if (animation.name === 'idle' && this.mixer) {
-              this.playAnimation('idle');
-            }
-          }
-        },
-        null,
-        (error) => console.error(`Error loading animation ${animation.name}:`, error)
-      );
+      // Load weapon model
+      loader.load(weaponPath, (weaponFBX) => {
+        DEBUG.log('Game', 'loadAssets', 'Weapon FBX loaded successfully:', weaponFBX);
+        
+        // Initialize character controller with both character and weapon
+        this.characterController = new CharacterController(
+          characterFBX,
+          weaponFBX, // Pass the weapon model
+          this.scene,
+          null, // No physics world needed
+          './fox-character-copy/animations/sword-and-shield-pack/', // Animation path
+          loader
+        );
+        
+        // Remove loading screen immediately after character is initialized
+        this.removeLoadingScreen();
+        
+        DEBUG.log('Game', 'loadAssets', 'Character controller initialized with weapon');
+      });
+    }, 
+    // Progress callback
+    (progress) => {
+      const percent = Math.round(progress.loaded / progress.total * 100);
+      if (this.loadingScreen) {
+        this.loadingScreen.textContent = `${percent}%`;
+      }
+    },
+    // Error callback
+    (error) => {
+      DEBUG.log('Game', 'loadError', `Error loading character model: ${error.message}`);
+      if (this.loadingScreen) {
+        this.loadingScreen.textContent = 'Error loading model';
+        const retryButton = document.createElement('button');
+        retryButton.textContent = 'Retry';
+        retryButton.style.marginLeft = '10px';
+        retryButton.onclick = () => {
+          this.loadAssets();
+          retryButton.remove();
+        };
+        this.loadingScreen.appendChild(retryButton);
+      }
     });
+  }
+  
+  removeLoadingScreen() {
+    // Try multiple methods to ensure loading screen is removed
+    try {
+      // Method 1: Using the stored reference
+      if (this.loadingScreen) {
+        if (this.loadingScreen.parentNode) {
+          this.loadingScreen.parentNode.removeChild(this.loadingScreen);
+        }
+        this.loadingScreen = null;
+      }
+      
+      // Method 2: Using ID as backup
+      const loadingScreenById = document.getElementById('loadingScreen');
+      if (loadingScreenById) {
+        loadingScreenById.remove();
+      }
+      
+      // Method 3: Force remove any potential loading screens
+      document.querySelectorAll('[id="loadingScreen"]').forEach(el => el.remove());
+      
+      DEBUG.log('Game', 'removeLoadingScreen', 'Loading screen removed successfully');
+    } catch (error) {
+      DEBUG.log('Game', 'removeLoadingScreen', `Error removing loading screen: ${error.message}`);
+    }
   }
   
   onWindowResize() {
@@ -550,33 +294,11 @@ class Game {
   animate() {
     requestAnimationFrame(() => this.animate());
     
-    const delta = 1/60; // Fixed time step
+    const deltaTime = this.clock.getDelta();
     
-    // Update physics
-    if (this.world) {
-      this.world.step(delta);
-      
-      // Update character position from physics
-      if (this.character && this.characterBody) {
-        this.character.position.copy(this.characterBody.position);
-        
-        // Apply movement forces based on input
-        const moveSpeed = this.movement.running ? 10 : 5;
-        const force = new CANNON.Vec3(0, 0, 0);
-        
-        if (this.movement.forward) force.z -= moveSpeed;
-        if (this.movement.backward) force.z += moveSpeed;
-        if (this.movement.left) force.x -= moveSpeed;
-        if (this.movement.right) force.x += moveSpeed;
-        
-        // Apply force in character's facing direction
-        this.characterBody.applyLocalForce(force, new CANNON.Vec3(0, 0, 0));
-      }
-    }
-    
-    // Update animation mixer
-    if (this.mixer) {
-      this.mixer.update(delta);
+    // Update character controller
+    if (this.characterController) {
+      this.characterController.update(deltaTime, this.camera);
     }
     
     // Update controls
