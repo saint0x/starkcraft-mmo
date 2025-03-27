@@ -96,7 +96,7 @@ export class CharacterController {
     
     // Only attach weapon if it exists
     if (this.weapon) {
-      this.attachWeapon();
+    this.attachWeapon();
     }
   }
   
@@ -181,19 +181,39 @@ export class CharacterController {
       's': false,
       'a': false,
       'd': false,
-      'shift': false
+      'shift': false,
+      'capslock': false,
+      'f': false,
+      'e': false
     };
     
     // Add event listeners
     document.addEventListener('keydown', (e) => {
-      if (this.keys.hasOwnProperty(e.key.toLowerCase())) {
-        this.keys[e.key.toLowerCase()] = true;
+      const key = e.key.toLowerCase();
+      if (this.keys.hasOwnProperty(key)) {
+        this.keys[key] = true;
+        
+        // Handle attack animations
+        switch(key) {
+          case 'capslock':
+            this.playAnimation('attack', true);
+            break;
+          case 'f':
+            this.playAnimation('block', true);
+            break;
+          case 'e':
+            // For now this will also trigger attack since we only have one,
+            // but we can add more attack animations later
+            this.playAnimation('attack', true);
+            break;
+        }
       }
     });
     
     document.addEventListener('keyup', (e) => {
-      if (this.keys.hasOwnProperty(e.key.toLowerCase())) {
-        this.keys[e.key.toLowerCase()] = false;
+      const key = e.key.toLowerCase();
+      if (this.keys.hasOwnProperty(key)) {
+        this.keys[key] = false;
       }
     });
   }
@@ -274,13 +294,18 @@ export class CharacterController {
   update(deltaTime, camera) {
     // Update animation mixer
     if (this.mixer) {
-    this.mixer.update(deltaTime);
+      this.mixer.update(deltaTime);
     }
 
     // Reset movement direction
     this.moveDirection.set(0, 0, 0);
     let isMoving = false;
     let isRunning = this.keys['shift'];
+
+    // Don't process movement if we're in an attack animation
+    if (this.currentAnimation === 'attack' || this.currentAnimation === 'block') {
+      return;
+    }
 
     // Calculate movement based on camera direction
     const cameraDirection = new THREE.Vector3();
